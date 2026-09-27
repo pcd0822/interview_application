@@ -4,7 +4,7 @@ import { CalendarDays, X, Plus, Pencil, Trash2, Play, Save, Copy, Search, ArrowU
 import { PageHeader } from './TeacherLayout';
 import { MonthCalendar, StatusBadge, Modal, Field, Spinner } from '../../components/common';
 import { PERIODS, PERIOD_IDS, PERIOD_MAP, MAX_BOOKINGS_PER_DAY, REQUESTS_MAX_LEN } from '../../lib/constants';
-import { monthRange, formatKoDate, formatDateTime, isWeekday, monthGrid, minBookableIso } from '../../lib/date';
+import { visibleRange, formatKoDate, formatDateTime, isWeekday, monthGrid, minBookableIso } from '../../lib/date';
 import {
   getAvailabilityRange, saveAvailability, getBookingsRange, getAllBookings, listStudents, getFeedback,
   createBookingAsTeacher, updateBookingAsTeacher, deleteBookingAsTeacher, sendMailSafe, bookingVars,
@@ -47,7 +47,7 @@ function AvailabilityTab() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const { start, end } = monthRange(month);
+      const { start, end } = visibleRange(month); // 그리드에 보이는 앞뒤 달 날짜까지 포함
       const [a, b] = await Promise.all([getAvailabilityRange(start, end), getBookingsRange(start, end)]);
       setSaved(a); setBookings(b);
     } catch (e) { toast.error(errMsg(e)); } finally { setLoading(false); }
@@ -101,7 +101,7 @@ function AvailabilityTab() {
     const n = current(c.iso).length;
     const dirty = c.iso in draft;
     return {
-      sub: n ? <span className="cal-sub ok" style={{ color: '#0D9488' }}>{n}교시 열림{dirty ? '*' : ''}</span> : (dirty ? <span className="cal-sub">닫힘*</span> : null),
+      sub: n ? <span className="cal-sub ok" style={{ color: '#0D9488' }}>{n}타임 열림{dirty ? '*' : ''}</span> : (dirty ? <span className="cal-sub">닫힘*</span> : null),
       selected: selected === c.iso,
       multi: copyMode && copyTargets.includes(c.iso),
       dot: !!bookedByDate[c.iso],
@@ -180,7 +180,7 @@ function BookingsTab() {
 
   const loadMonth = useCallback(async () => {
     setLoading(true);
-    try { const { start, end } = monthRange(month); setMonthBookings(await getBookingsRange(start, end)); }
+    try { const { start, end } = visibleRange(month); setMonthBookings(await getBookingsRange(start, end)); }
     catch (e) { toast.error(errMsg(e)); } finally { setLoading(false); }
   }, [month]);
   const loadAll = useCallback(async () => {

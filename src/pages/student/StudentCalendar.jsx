@@ -3,7 +3,7 @@ import { Info, Lock, CheckCircle2 } from 'lucide-react';
 import { useAuth } from '../../store/auth';
 import { MonthCalendar, Sheet, Field, Spinner } from '../../components/common';
 import { PERIODS, MAX_BOOKINGS_PER_DAY, REQUESTS_MAX_LEN } from '../../lib/constants';
-import { monthRange, isBookableDate, formatKoDate, minBookableIso } from '../../lib/date';
+import { visibleRange, isBookableDate, formatKoDate, minBookableIso } from '../../lib/date';
 import { getAvailabilityRange, getSlotStatusRange, getMyBookings, createBookingAsStudent } from '../../lib/api';
 import { toast } from '../../store/toast';
 import { errMsg } from '../../lib/firebase';
@@ -22,7 +22,7 @@ export default function StudentCalendar() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const { start, end } = monthRange(month);
+      const { start, end } = visibleRange(month);
       const [a, t, m] = await Promise.all([getAvailabilityRange(start, end), getSlotStatusRange(start, end), getMyBookings(student.studentId)]);
       setAvail(a); setTaken(t); setMine(m);
     } catch (e) { toast.error(errMsg(e)); } finally { setLoading(false); }

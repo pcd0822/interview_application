@@ -55,6 +55,13 @@ export function monthGrid(monthDate) {
 export function monthRange(monthDate) {
   return { start: toIso(startOfMonth(monthDate)), end: toIso(endOfMonth(monthDate)) };
 }
+/** 캘린더 그리드에 실제로 보이는 범위(앞뒤 달의 날짜 포함). 데이터 조회는 이 범위로 해야 셀에 빠짐없이 표시된다. */
+export function visibleRange(monthDate) {
+  return {
+    start: toIso(startOfWeek(startOfMonth(monthDate), { weekStartsOn: 0 })),
+    end: toIso(endOfWeek(endOfMonth(monthDate), { weekStartsOn: 0 })),
+  };
+}
 export const isPast = (iso) => isBefore(parseISO(iso), parseISO(todayIso()));
 export function isWeekday(iso) {
   const w = getDay(parseISO(iso));
