@@ -121,7 +121,11 @@ function MemoCard({ booking: b, uid, onStatusChange }) {
   const [busy, setBusy] = useState(false);
   const dirty = useRef(false);
   const latest = useRef('');
-  useEffect(() => { getMemo(b.id, uid).then((m) => { setContent(m?.content || ''); latest.current = m?.content || ''; setSavedAt(m?.updatedAt || null); setLoaded(true); }); }, [b.id, uid]);
+  useEffect(() => {
+    getMemo(b.id, uid)
+      .catch((e) => { console.warn('memo load', e); toast.error('메모를 불러오지 못했습니다. 빈 메모로 시작합니다.'); return null; })
+      .then((m) => { setContent(m?.content || ''); latest.current = m?.content || ''; setSavedAt(m?.updatedAt || null); setLoaded(true); });
+  }, [b.id, uid]);
   useEffect(() => {
     const t = setInterval(async () => {
       if (!dirty.current) return;
