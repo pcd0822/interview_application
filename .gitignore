@@ -14,3 +14,4 @@ functions/.env.*
 .DS_Store
 .vscode/*
 !.vscode/extensions.json
+.firebaserc
