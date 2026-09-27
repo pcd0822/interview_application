@@ -246,7 +246,8 @@ exports.sendMail = onCall({ secrets: [GAS_MAIL_TOKEN] }, async (req) => {
     const text = await res.text();
     let json = null;
     try { json = JSON.parse(text); } catch { /* HTML 응답 등 */ }
-    if (!res.ok || !json || json.ok !== true) throw new Error(json?.error || `GAS 응답 오류 (${res.status}) ${text.slice(0, 120)}`);
+    // doGet 응답({ok:true, service:...})이 섞여 들어오면 발송 성공으로 오인하지 않도록 service 필드 부재도 확인
+    if (!res.ok || !json || json.ok !== true || json.service) throw new Error(json?.error || `GAS 응답 오류 (${res.status}) ${text.slice(0, 120)}`);
     await db.collection('mailLogs').add({ ...log, subject, ok: true });
     return { ok: true };
   } catch (e) {
