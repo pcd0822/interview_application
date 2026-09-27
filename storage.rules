@@ -1,0 +1,26 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function signedIn() { return request.auth != null; }
+    function isTeacher() {
+      return signedIn() && firestore.exists(/databases/(default)/documents/teachers/$(request.auth.uid));
+    }
+    function isOwnerStudent(bookingId) {
+      return signedIn() && request.auth.token.studentId != null
+        && firestore.exists(/databases/(default)/documents/feedbacks/$(bookingId))
+        && firestore.get(/databases/(default)/documents/feedbacks/$(bookingId)).data.studentId == string(request.auth.token.studentId);
+    }
+
+    // 피드백 파일: 교사 쓰기, 교사 및 해당 학생만 읽기
+    match /feedbacks/{bookingId}/{fileName} {
+      allow write: if isTeacher()
+        && (request.resource == null   // delete
+            || request.resource.contentType in ['application/pdf', 'text/markdown', 'text/plain', 'application/octet-stream']);
+      allow read: if isTeacher() || isOwnerStudent(bookingId);
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

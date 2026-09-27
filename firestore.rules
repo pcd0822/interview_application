@@ -1,0 +1,148 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{db}/documents {
+
+    /* ───────── 판정 함수 ───────── */
+    function signedIn() { return request.auth != null; }
+    function isTeacher() {
+      return signedIn() && exists(/databases/$(db)/documents/teachers/$(request.auth.uid));
+    }
+    // 학생: registerStudent 가 부여한 custom claim
+    function isStudent() { return signedIn() && request.auth.token.studentId != null; }
+    function sid() { return string(request.auth.token.studentId); }
+    function studentDoc() { return get(/databases/$(db)/documents/students/$(sid())).data; }
+    function isApprovedStudent() {
+      return isStudent()
+        && exists(/databases/$(db)/documents/students/$(sid()))
+        && studentDoc().authUid == request.auth.uid
+        && studentDoc().status == 'approved';
+    }
+    // YYYY-MM-DD 문자열과 UTC 자정 timestamp 일치 검사
+    function pad(n) { return n < 10 ? '0' + string(n) : string(n); }
+    function tsMatchesDate(ts, d) {
+      return d == string(ts.year()) + '-' + pad(ts.month()) + '-' + pad(ts.day())
+        && ts.hours() == 0 && ts.minutes() == 0 && ts.seconds() == 0;
+    }
+    // 신청일(오늘, KST) 기준 3일 이후만 허용: KST 자정(dateTs - 9h) >= now + 2d  ⇔  date >= today + 3
+    function isAtLeast3DaysAhead(dateTs) {
+      return dateTs >= request.time + duration.value(57, 'h');
+    }
+
+    /* ───────── settings ───────── */
+    match /settings/teacherKey {
+      allow read: if false;            // Function(verifyTeacherKey/registerTeacher)으로만 검증
+      allow write: if isTeacher();     // 설정 모달에서 변경
+    }
+    match /settings/{doc} {
+      allow read, write: if isTeacher();
+    }
+
+    /* ───────── teachers ───────── */
+    match /teachers/{uid} {
+      allow read: if isTeacher() || (signedIn() && request.auth.uid == uid);
+      allow write: if false;           // registerTeacher Function(Admin SDK)으로만 생성
+    }
+
+    /* ───────── students ───────── */
+    match /students/{studentId} {
+      allow read: if isTeacher() || (isStudent() && resource.data.authUid == request.auth.uid);
+      allow create, delete: if isTeacher();
+      allow update: if isTeacher()
+        // 학생 본인은 비밀번호 변경 완료 표시(mustChangePassword=false)만 가능
+        || (isStudent() && resource.data.authUid == request.auth.uid
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['mustChangePassword'])
+            && request.resource.data.mustChangePassword == false);
+    }
+
+    /* ───────── availability ───────── */
+    match /availability/{date} {
+      allow read: if signedIn();
+      allow write: if isTeacher()
+        && request.resource.data.date == date
+        && request.resource.data.openPeriods is list;
+    }
+
+    /* ───────── slotStatus (학생 캘린더 예약완료 표시, 학생 정보 없음) ───────── */
+    match /slotStatus/{date} {
+      allow read: if signedIn();
+      allow write: if isTeacher();     // 실제 갱신은 syncSlotStatus 트리거(Admin SDK)
+    }
+
+    /* ───────── studentDailyCounts (하루 2건 제한용 카운터) ───────── */
+    match /studentDailyCounts/{cid} {
+      allow read: if isTeacher() || (isStudent() && cid.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}_' + sid() + '$'));
+      allow write: if isTeacher();
+      allow create: if isApprovedStudent()
+        && cid == request.resource.data.date + '_' + sid()
+        && request.resource.data.studentId == sid()
+        && request.resource.data.count == 1;
+      allow update: if isApprovedStudent()
+        && cid == resource.data.date + '_' + sid()
+        && request.resource.data.date == resource.data.date
+        && request.resource.data.studentId == sid()
+        && request.resource.data.count == resource.data.count + 1;   // 학생은 증가만 가능
+    }
+
+    /* ───────── bookings ───────── */
+    match /bookings/{bookingId} {
+      function counterPath(d) { return /databases/$(db)/documents/studentDailyCounts/$(d + '_' + sid()); }
+      function prevCount(d) { return exists(counterPath(d)) ? get(counterPath(d)).data.count : 0; }
+      function slotOpen(d, p) {
+        return exists(/databases/$(db)/documents/availability/$(d))
+          && p in get(/databases/$(db)/documents/availability/$(d)).data.openPeriods;
+      }
+
+      // 학생: 자기 신청만 읽기. 존재하지 않는 슬롯(resource == null)은 트랜잭션의 빈 슬롯 확인용으로 허용(데이터 없음).
+      // 다른 학생의 슬롯은 permission-denied → 클라이언트가 "방금 다른 학생이 신청했어요"로 처리.
+      allow read: if isTeacher() || (isStudent() && (resource == null || resource.data.studentId == sid()));
+      allow update, delete: if isTeacher();
+      allow create: if isTeacher()
+        || (isApprovedStudent()
+          && request.resource.data.studentId == sid()
+          && request.resource.data.studentName == studentDoc().name
+          && request.resource.data.date is string
+          && request.resource.data.date.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+          && request.resource.data.periodId in ['p1','p2','p3','p4','lunch','p5','p6','p7','after1','after2']
+          && bookingId == request.resource.data.date + '_' + request.resource.data.periodId   // 슬롯 중복은 문서 id로 물리 차단
+          && request.resource.data.status == 'before'
+          && request.resource.data.updatedBy == null
+          && request.resource.data.targetUniversity is string && request.resource.data.targetUniversity.size() > 0 && request.resource.data.targetUniversity.size() <= 100
+          && request.resource.data.targetAdmissionType is string && request.resource.data.targetAdmissionType.size() > 0 && request.resource.data.targetAdmissionType.size() <= 60
+          && request.resource.data.requests is string && request.resource.data.requests.size() <= 500
+          && request.resource.data.keys().hasOnly(['date','periodId','periodLabel','timeRange','dateTs','studentId','studentName','targetUniversity','targetAdmissionType','requests','status','createdAt','updatedAt','updatedBy'])
+          // 교사가 연 교시만
+          && slotOpen(request.resource.data.date, request.resource.data.periodId)
+          // 3일 규칙
+          && request.resource.data.dateTs is timestamp
+          && tsMatchesDate(request.resource.data.dateTs, request.resource.data.date)
+          && isAtLeast3DaysAhead(request.resource.data.dateTs)
+          // 하루 2건 규칙: 같은 트랜잭션에서 카운터가 정확히 +1 되고 2 이하
+          && getAfter(counterPath(request.resource.data.date)).data.count == prevCount(request.resource.data.date) + 1
+          && getAfter(counterPath(request.resource.data.date)).data.count <= 2);
+    }
+
+    /* ───────── memos (작성 교사만) ───────── */
+    match /memos/{memoId} {
+      allow read, delete: if isTeacher() && resource.data.teacherUid == request.auth.uid;
+      allow create, update: if isTeacher()
+        && request.resource.data.teacherUid == request.auth.uid
+        && memoId == request.resource.data.bookingId + '_' + request.auth.uid;
+    }
+
+    /* ───────── feedbacks ───────── */
+    match /feedbacks/{bookingId} {
+      allow read: if isTeacher() || (isStudent() && resource.data.studentId == sid());
+      allow write: if isTeacher();
+    }
+
+    /* ───────── mailLogs ───────── */
+    match /mailLogs/{id} {
+      allow read: if isTeacher();
+      allow write: if false;           // sendMail Function 이 기록
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
