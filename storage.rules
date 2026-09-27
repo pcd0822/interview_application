@@ -1,22 +1,22 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
+    // Firestore 조회 없이 토큰(custom claims)과 경로만으로 판정
+    // - 교사: registerTeacher Function 이 부여한 claim role == 'teacher'
+    // - 학생: registerStudent Function 이 부여한 claim studentId
     function signedIn() { return request.auth != null; }
-    function isTeacher() {
-      return signedIn() && firestore.exists(/databases/(default)/documents/teachers/$(request.auth.uid));
-    }
-    function isOwnerStudent(bookingId) {
-      return signedIn() && request.auth.token.studentId != null
-        && firestore.exists(/databases/(default)/documents/feedbacks/$(bookingId))
-        && firestore.get(/databases/(default)/documents/feedbacks/$(bookingId)).data.studentId == string(request.auth.token.studentId);
+    function isTeacher() { return signedIn() && request.auth.token.role == 'teacher'; }
+    function isStudent(studentId) {
+      return signedIn() && request.auth.token.studentId != null && string(request.auth.token.studentId) == studentId;
     }
 
-    // 피드백 파일: 교사 쓰기, 교사 및 해당 학생만 읽기
-    match /feedbacks/{bookingId}/{fileName} {
+    // 피드백 파일: feedbacks/{bookingId}/{studentId}/{fileName}
+    // 교사 쓰기, 교사 및 해당 학생만 읽기
+    match /feedbacks/{bookingId}/{studentId}/{fileName} {
       allow write: if isTeacher()
         && (request.resource == null   // delete
             || request.resource.contentType in ['application/pdf', 'text/markdown', 'text/plain', 'application/octet-stream']);
-      allow read: if isTeacher() || isOwnerStudent(bookingId);
+      allow read: if isTeacher() || isStudent(studentId);
     }
 
     match /{allPaths=**} {

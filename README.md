@@ -127,7 +127,8 @@ npm run dev              # http://localhost:5173
 
 ## 9. 보안 요약
 
-- 교사 판정: `teachers/{uid}` 존재. 이 문서는 `registerTeacher` Function(인증키 검증)만 생성.
+- 교사 판정: Firestore 규칙은 `teachers/{uid}` 존재, Storage 규칙은 custom claim `role == 'teacher'`. 둘 다 `registerTeacher` Function(인증키 검증)만 부여.
+- Storage 경로는 `feedbacks/{bookingId}/{studentId}/{file}`. 학생은 자기 학번 경로만 읽을 수 있음.
 - 학생 판정: `registerStudent`가 부여한 custom claim `studentId`. 규칙에서 `students/{sid}.authUid == uid && status == approved` 재확인.
 - 학생은 자기 `students`, `bookings`, `feedbacks`, `studentDailyCounts` 문서만 읽음. 다른 학생 정보를 담은 컬렉션은 읽을 수 없고, 캘린더의 예약완료 표시는 학생 정보가 없는 `slotStatus`만 사용.
 - 슬롯 중복: 문서 ID `{date}_{periodId}` + 트랜잭션. 3일 규칙: 규칙에서 `dateTs`(UTC 자정) ≥ `request.time + 57h`. 하루 2건: 트랜잭션 안에서 카운터 +1, 규칙 `getAfter`로 `≤ 2` 검증.

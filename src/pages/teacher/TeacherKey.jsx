@@ -31,6 +31,7 @@ export default function TeacherKey() {
       await fns.verifyTeacherKey({ key: key.trim() });
       const user = await googleLogin();
       const res = await fns.registerTeacher({ key: key.trim() });
+      await user.getIdToken(true); // role=teacher claim 반영
       setTeacher(res.teacher, user);
     } catch (e2) {
       setErr(errMsg(e2, '인증에 실패했습니다.'));
@@ -44,6 +45,7 @@ export default function TeacherKey() {
       const user = await googleLogin();
       try {
         const res = await fns.registerTeacher({ key: null }); // 기존 교사면 키 없이 통과
+        await user.getIdToken(true); // role=teacher claim 반영
         setTeacher(res.teacher, user);
       } catch (e2) {
         await signOut(auth);

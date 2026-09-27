@@ -17,7 +17,7 @@
 | `studentDailyCounts` | 자기 것만 | 문서 ID가 `{date}_{sid}` 패턴과 일치할 때만 |
 | `settings/teacherKey` | 클라이언트 읽기 전면 차단 | `allow read: if false`, Function으로만 대조 |
 | `teachers` 생성으로 교사 사칭 | 차단 | 클라이언트 write 금지, `registerTeacher`가 인증키 검증 후 Admin SDK로 생성. 학생 claim 계정은 거부 |
-| Storage 피드백 파일 | 교사 + 해당 학생만 | `firestore.get(feedbacks/{bookingId}).studentId == token.studentId` |
+| Storage 피드백 파일 | 교사 + 해당 학생만 | 경로 `feedbacks/{bookingId}/{studentId}/{file}`. 교사는 claim `role == 'teacher'`, 학생은 claim `studentId == 경로의 studentId`. Firestore 조회 없음(교차 서비스 권한 불필요) |
 | 학생 화면 UI | 타인 정보 없음 | S5 슬롯: 「예약완료」 배지만, S7/S8: 본인 데이터 쿼리(`where studentId == 본인`) |
 | 가상 이메일 노출 | 없음 | 로그인·가입 화면에서 학번만 입력, 오류 메시지도 이메일 미포함 |
 | 가입 시 학번 존재 여부 탐색 | 완화 | 미등록·이름 불일치 모두 같은 메시지 반환 |

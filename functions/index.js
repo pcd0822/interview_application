@@ -140,12 +140,17 @@ exports.registerTeacher = onCall(async (req) => {
   if (token.studentId) throw new HttpsError('permission-denied', '학생 계정으로는 교사 등록을 할 수 없습니다.');
   const ref = db.doc(`teachers/${uid}`);
   const snap = await ref.get();
-  if (snap.exists) return { ok: true, teacher: snap.data(), existing: true };
+  if (snap.exists) {
+    // Storage 규칙용 claim 이 없는 기존 교사에게도 부여 (클라이언트는 응답 후 토큰을 강제 갱신)
+    if (token.role !== 'teacher') await auth.setCustomUserClaims(uid, { role: 'teacher' });
+    return { ok: true, teacher: snap.data(), existing: true };
+  }
   const key = str(req.data?.key, 64);
   const real = await getTeacherKey();
   if (!key || !real || key !== real) throw new HttpsError('permission-denied', '등록되지 않은 교사입니다. 최초 1회는 인증키가 필요합니다.');
   const teacher = { email: token.email || '', displayName: token.name || token.email || '교사', photoURL: token.picture || '', createdAt: admin.firestore.FieldValue.serverTimestamp() };
   await ref.set(teacher);
+  await auth.setCustomUserClaims(uid, { role: 'teacher' });
   return { ok: true, teacher: { ...teacher, createdAt: null }, existing: false };
 });
 

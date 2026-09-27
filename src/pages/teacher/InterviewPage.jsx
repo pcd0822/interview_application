@@ -199,7 +199,7 @@ function FeedbackCard({ booking: b, uid, teacherDisplayName, onSaved }) {
         if (file) {
           setProgress(0);
           try {
-            info = await uploadFeedbackFile(b.id, file, setProgress);
+            info = await uploadFeedbackFile(b.id, b.studentId, file, setProgress);
           } catch (e) {
             console.error('upload failed', e);
             throw new Error(`파일 업로드에 실패했습니다 (${e?.code || e?.message || '알 수 없는 오류'}). Storage 규칙 또는 네트워크를 확인해 주세요.`);

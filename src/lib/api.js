@@ -292,9 +292,10 @@ export async function getFeedbacksRange(startIso, endIso) {
   return snapToList(snap);
 }
 /** 파일 업로드(진행률 콜백) → { url, name, type } */
-export function uploadFeedbackFile(bookingId, file, onProgress) {
+export function uploadFeedbackFile(bookingId, studentId, file, onProgress) {
   const ext = file.name.toLowerCase().endsWith('.pdf') ? 'pdf' : 'md';
-  const path = `feedbacks/${bookingId}/${Date.now()}_${file.name}`;
+  // 경로에 학번을 포함 → Storage 규칙이 Firestore 조회 없이 해당 학생 읽기 권한을 판정
+  const path = `feedbacks/${bookingId}/${studentId}/${Date.now()}_${file.name}`;
   const task = uploadBytesResumable(sRef(storage, path), file, { contentType: ext === 'pdf' ? 'application/pdf' : 'text/markdown' });
   return new Promise((resolve, reject) => {
     task.on('state_changed',
