@@ -69,5 +69,8 @@ export function errMsg(e, fallback = '오류가 발생했습니다. 다시 시�
   if (map[code]) return map[code];
   // callable에서 던진 HttpsError 메시지는 한국어로 작성됨
   if (code.startsWith('functions/') && e.message) return e.message;
-  return e?.message && /[가-힣]/.test(e.message) ? e.message : fallback;
+  if (e?.message && /[가-힣]/.test(e.message)) return e.message;
+  // 원인 추적을 위해 오류 코드(또는 메시지 앞부분)를 함께 표시
+  const detail = code || (e?.message ? String(e.message).slice(0, 80) : '');
+  return detail ? `${fallback} (${detail})` : fallback;
 }
