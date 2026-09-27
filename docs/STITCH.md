@@ -15,15 +15,15 @@
 | S5 학생 신청 캘린더 | `src/pages/student/StudentCalendar.jsx` | MOBILE | 생성됨 | `screens/569f7901f8ab46659ce7154bf076c5b6` |
 | S6 신청 폼 시트 | `src/pages/student/StudentCalendar.jsx` (BookingFormSheet) | MOBILE | 생성됨 | `screens/37591de16e544cd499dc04466bc137b5` |
 | S7 내 신청 목록 | `src/pages/student/MyBookings.jsx` | MOBILE | 생성됨 | `screens/e621c87de2a44916a714548f0219aaa9` |
-| S8 피드백 상세 | `src/pages/student/FeedbackDetail.jsx` | MOBILE | 생성 요청됨(타임아웃, 반영 확인 필요) | - |
+| S8 피드백 상세 | `src/pages/student/FeedbackDetail.jsx` | MOBILE | 생성됨(캔버스에서 확인, MCP 응답 타임아웃으로 리소스 ID 미수집) | - |
 | T1 교사 인증키 | `src/pages/teacher/TeacherKey.jsx` | DESKTOP | 생성됨 | `screens/7c34fc48cf944cd2b5d7b50f5e2909f6` |
 | T2 교사 대시보드 레이아웃 | `src/pages/teacher/TeacherLayout.jsx`, `Dashboard.jsx` | DESKTOP | 생성됨(제목 "T2 교사 대시보드") | `screens/63315eab1ba747bf93016442ceca2f13` |
-| T3 학생관리 | `src/pages/teacher/StudentsPage.jsx` | DESKTOP | 생성 요청됨(타임아웃, 반영 확인 필요) | - |
-| T4 일정관리-시간 설정 | `src/pages/teacher/SchedulePage.jsx` (AvailabilityTab) | DESKTOP | 생성 요청됨(타임아웃, 반영 확인 필요) | - |
-| T5 일정관리-캘린더 뷰+패널 | `src/pages/teacher/SchedulePage.jsx` (BookingsTab) | DESKTOP | 생성 요청됨(타임아웃, 반영 확인 필요) | - |
-| T6 일정관리-테이블 뷰 | `src/pages/teacher/SchedulePage.jsx` (BookingsTab, view=table) | DESKTOP | 생성 요청됨(타임아웃, 반영 확인 필요) | - |
-| T7 모의면접 | `src/pages/teacher/InterviewPage.jsx` | DESKTOP | 생성 요청됨(타임아웃, 반영 확인 필요) | - |
-| T8 일지관리 | `src/pages/teacher/LogPage.jsx` | DESKTOP | 생성 요청됨(타임아웃, 반영 확인 필요) | - |
+| T3 학생관리 | `src/pages/teacher/StudentsPage.jsx` | DESKTOP | 생성됨(캔버스에서 확인, MCP 응답 타임아웃으로 리소스 ID 미수집) | - |
+| T4 일정관리-시간 설정 | `src/pages/teacher/SchedulePage.jsx` (AvailabilityTab) | DESKTOP | 생성됨(캔버스에서 확인, MCP 응답 타임아웃으로 리소스 ID 미수집) | - |
+| T5 일정관리-캘린더 뷰+패널 | `src/pages/teacher/SchedulePage.jsx` (BookingsTab) | DESKTOP | 생성됨(캔버스에서 확인, MCP 응답 타임아웃으로 리소스 ID 미수집) | - |
+| T6 일정관리-테이블 뷰 | `src/pages/teacher/SchedulePage.jsx` (BookingsTab, view=table) | DESKTOP | 생성됨(캔버스에서 확인, MCP 응답 타임아웃으로 리소스 ID 미수집) | - |
+| T7 모의면접 | `src/pages/teacher/InterviewPage.jsx` | DESKTOP | 생성됨(캔버스에서 확인, MCP 응답 타임아웃으로 리소스 ID 미수집) | - |
+| T8 일지관리 | `src/pages/teacher/LogPage.jsx` | DESKTOP | 생성됨(캔버스에서 확인, MCP 응답 타임아웃으로 리소스 ID 미수집) | - |
 | T9 설정 모달 | `src/pages/teacher/SettingsModal.jsx` | DESKTOP | 생성됨 | `screens/8c66512dc6d74a3cbb87e5cef4990725` |
 
 ## 메모
