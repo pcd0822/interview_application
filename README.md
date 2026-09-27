@@ -49,7 +49,7 @@
 | `slotStatus/{YYYY-MM-DD}` | 날짜 | `taken: [periodId]` — 학생 캘린더 「예약완료」 표시용, **학생 정보 없음** (트리거가 갱신) |
 | `studentDailyCounts/{date}_{studentId}` | | 하루 2건 제한 카운터 (트랜잭션 + 규칙 `getAfter`로 강제) |
 | `memos/{bookingId}_{teacherUid}` | | 작성 교사만 읽기/쓰기 |
-| `feedbacks/{bookingId}` | | 교사 공유, 해당 학생만 읽기. `interviewDateIso` 추가(기간 조회용) |
+| `feedbacks/{bookingId}_{teacherUid}` | | 교사별 피드백. 모든 교사가 읽되 작성자(`teacherUid`, 구형 문서는 `createdBy`)만 수정·삭제. 해당 학생만 읽기. 조회는 `bookingId` 필드 기준(일정 이동 시 id는 유지, `bookingId`만 갱신). `interviewDateIso` 추가(기간 조회용) |
 | `mailLogs/{autoId}` | | 발송 성공/실패 기록 (Function이 기록) |
 
 교시(periodId): p1~p4, lunch, p5~p7, after1, after2 — `src/lib/constants.js`.

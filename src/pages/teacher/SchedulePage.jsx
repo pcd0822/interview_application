@@ -6,7 +6,7 @@ import { MonthCalendar, StatusBadge, Modal, Field, Spinner } from '../../compone
 import { PERIODS, PERIOD_IDS, PERIOD_MAP, MAX_BOOKINGS_PER_DAY, REQUESTS_MAX_LEN } from '../../lib/constants';
 import { visibleRange, formatKoDate, formatDateTime, isWeekday, monthGrid, minBookableIso } from '../../lib/date';
 import {
-  getAvailabilityRange, saveAvailability, getBookingsRange, getAllBookings, listStudents, getFeedback,
+  getAvailabilityRange, saveAvailability, getBookingsRange, getAllBookings, listStudents, getFeedbacksForBooking,
   createBookingAsTeacher, updateBookingAsTeacher, deleteBookingAsTeacher, sendMailSafe, bookingVars,
 } from '../../lib/api';
 import { useAuth } from '../../store/auth';
@@ -317,8 +317,9 @@ function BookingsTab() {
 }
 
 function BookingDetail({ booking: b, onInterview, onEdit, onDelete }) {
-  const [fb, setFb] = useState(undefined);
-  useEffect(() => { setFb(undefined); getFeedback(b.id).then(setFb).catch(() => setFb(null)); }, [b.id]);
+  const [fbs, setFbs] = useState(undefined);
+  useEffect(() => { setFbs(undefined); getFeedbacksForBooking(b.id).then(setFbs).catch(() => setFbs([])); }, [b.id]);
+  const fb = fbs === undefined ? undefined : (fbs.length ? { teacherName: fbs.map((f) => f.teacherName).filter(Boolean).join(', ') || '-', count: fbs.length } : null);
   return (
     <div>
       <div className="row-between mb-12"><b>{b.studentId} {b.studentName}</b><StatusBadge status={b.status} /></div>
@@ -328,7 +329,7 @@ function BookingDetail({ booking: b, onInterview, onEdit, onDelete }) {
         <span className="k">희망 전형</span><span className="v">{b.targetAdmissionType}</span>
         <span className="k">요청 사항</span><span className="v">{b.requests || '-'}</span>
         <span className="k">신청 일시</span><span className="v">{formatDateTime(b.createdAt)}{b.updatedBy ? ' (교사 수정)' : ''}</span>
-        <span className="k">피드백</span><span className="v">{fb === undefined ? '…' : fb ? <span className="badge badge-green">등록됨 · {fb.teacherName}</span> : <span className="muted">없음</span>}</span>
+        <span className="k">피드백</span><span className="v">{fb === undefined ? '…' : fb ? <span className="badge badge-green">등록됨 {fb.count > 1 ? `${fb.count}건` : ''} · {fb.teacherName}</span> : <span className="muted">없음</span>}</span>
       </div>
       <div className="row mt-16 wrap">
         <button className="btn btn-violet btn-sm" onClick={onInterview}><Play size={16} />면접 진행하기</button>

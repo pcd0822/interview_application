@@ -76,15 +76,18 @@ async function deleteStudentChildren(studentId) {
   const bookings = await db.collection('bookings').where('studentId', '==', studentId).get();
   for (const b of bookings.docs) {
     await deleteQueryBatch(db.collection('memos').where('bookingId', '==', b.id));
-    await db.doc(`feedbacks/${b.id}`).delete().catch(() => {});
     await b.ref.delete();
   }
+  // 피드백은 교사별 문서(`${bookingId}_${teacherUid}`, 구형은 `${bookingId}`). 일정 이동 뒤에는 파일 경로가 예전 bookingId 를 가리킬 수 있어 filePath 로 지운다.
+  const fbs = await db.collection('feedbacks').where('studentId', '==', studentId).get();
+  const filePaths = fbs.docs.map((d) => d.data().filePath).filter((p) => typeof p === 'string' && p.startsWith('feedbacks/'));
   await deleteQueryBatch(db.collection('feedbacks').where('studentId', '==', studentId));
   await deleteQueryBatch(db.collection('studentDailyCounts').where('studentId', '==', studentId));
   // Storage 파일
   try {
     const bucket = admin.storage().bucket();
     for (const b of bookings.docs) await bucket.deleteFiles({ prefix: `feedbacks/${b.id}/` }).catch(() => {});
+    for (const p of filePaths) await bucket.file(p).delete().catch(() => {});
   } catch (e) { console.warn('storage cleanup', e.message); }
 }
 

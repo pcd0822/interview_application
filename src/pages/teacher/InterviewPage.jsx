@@ -7,7 +7,7 @@ import { todayIso, formatKoDate, timeOptions, formatDateTime, koDateToIso } from
 import { BOOKING_STATUS } from '../../lib/constants';
 import {
   getUpcomingBookings, getAllBookings, searchBookings, getBooking, getStudent, getStudentBookings, getFeedbacksByStudent,
-  getMemo, saveMemo, setBookingStatus, getFeedback, saveFeedback, uploadFeedbackFile, deleteStorageFile,
+  getMemo, saveMemo, setBookingStatus, getFeedbacksForBooking, isFeedbackOwner, saveFeedback, uploadFeedbackFile, deleteStorageFile,
   sendMailSafe, bookingVars,
 } from '../../lib/api';
 import { useAuth } from '../../store/auth';
@@ -116,8 +116,10 @@ function StudentInfoCard({ booking: b }) {
     (async () => {
       const [s, bk, fbs] = await Promise.all([getStudent(b.studentId), getStudentBookings(b.studentId), getFeedbacksByStudent(b.studentId)]);
       setStudent(s);
-      const fbMap = Object.fromEntries(fbs.map((f) => [f.bookingId, f]));
-      setHistory(bk.filter((x) => x.id !== b.id).map((x) => ({ ...x, feedback: fbMap[x.id] })));
+      // 교사별 피드백이 여러 개일 수 있으므로 bookingId 로 묶는다
+      const fbMap = {};
+      fbs.forEach((f) => { (fbMap[f.bookingId] ||= []).push(f); });
+      setHistory(bk.filter((x) => x.id !== b.id).map((x) => ({ ...x, feedbacks: fbMap[x.id] || [] })));
     })();
   }, [b.id, b.studentId]);
   return (
@@ -144,7 +146,7 @@ function StudentInfoCard({ booking: b }) {
           <div key={h.id} style={{ borderLeft: '3px solid #E5E7EB', paddingLeft: 10 }}>
             <div className="row-between"><span className="small bold">{formatKoDate(h.date)} {h.periodLabel}</span><StatusBadge status={h.status} /></div>
             <div className="xs muted">{h.targetUniversity} · {h.targetAdmissionType}</div>
-            {h.feedback && <div className="xs mt-8" style={{ whiteSpace: 'pre-line' }}><b>{h.feedback.teacherName}</b> · {h.feedback.summary}</div>}
+            {h.feedbacks.map((f) => <div key={f.id} className="xs mt-8" style={{ whiteSpace: 'pre-line' }}><b>{f.teacherName}</b> · {f.summary}</div>)}
           </div>
         ))}
       </div>
@@ -193,9 +195,11 @@ function MemoCard({ booking: b, uid, onStatusChange }) {
   );
 }
 
-/* ── 우: 피드백 작성 노트 ── */
+/* ── 우: 피드백 작성 노트 (교사별 문서 — 내 것만 수정, 다른 교사 것은 조회) ── */
 function FeedbackCard({ booking: b, uid, teacherDisplayName, onSaved }) {
-  const [existing, setExisting] = useState(undefined);
+  const [all, setAll] = useState(undefined);          // 이 건의 피드백 전부
+  const existing = useMemo(() => (all === undefined ? undefined : (all.find((x) => isFeedbackOwner(x, uid)) || null)), [all, uid]);
+  const others = useMemo(() => (all || []).filter((x) => !isFeedbackOwner(x, uid)), [all, uid]);
   const [f, setF] = useState({ teacherName: teacherDisplayName, dateIso: '', start: '20:00', end: '22:00', summary: '', contentMd: '', notify: true });
   const [mode, setMode] = useState('md'); // 'md' | 'file'
   const [preview, setPreview] = useState(false);
@@ -207,15 +211,16 @@ function FeedbackCard({ booking: b, uid, teacherDisplayName, onSaved }) {
   const inputRef = useRef();
 
   useEffect(() => {
-    getFeedback(b.id).then((fb) => {
-      setExisting(fb);
+    getFeedbacksForBooking(b.id).then((rows) => {
+      setAll(rows);
+      const fb = rows.find((x) => isFeedbackOwner(x, uid));
       if (fb) {
         const [start, end] = (fb.interviewTime || '20:00~22:00').split('~');
         setF({ teacherName: fb.teacherName || teacherDisplayName, dateIso: fb.interviewDateIso || koDateToIso(fb.interviewDate) || '', start, end, summary: fb.summary || '', contentMd: fb.fileType ? '' : (fb.contentMd || ''), notify: false });
         if (fb.fileUrl) { setFileInfo({ url: fb.fileUrl, name: fb.fileName, type: fb.fileType, path: fb.filePath }); setMode('file'); }
       }
-    });
-  }, [b.id, teacherDisplayName]);
+    }).catch((e) => { toast.error(errMsg(e)); setAll([]); });
+  }, [b.id, uid, teacherDisplayName]);
 
   const pickFile = (fl) => {
     if (!fl) return;
@@ -266,7 +271,7 @@ function FeedbackCard({ booking: b, uid, teacherDisplayName, onSaved }) {
         if (r.ok === false) toast.error(`메일 발송 실패: ${r.error || ''}`); else msg += ' 안내 메일을 발송했습니다.';
       }
       toast.success(msg);
-      setExisting(await getFeedback(b.id));
+      setAll(await getFeedbacksForBooking(b.id));
       await onSaved();
     } catch (e) { toast.error(errMsg(e)); } finally { setBusy(false); setProgress(null); }
   };
@@ -274,7 +279,9 @@ function FeedbackCard({ booking: b, uid, teacherDisplayName, onSaved }) {
   if (existing === undefined) return <div className="card"><Spinner /></div>;
   return (
     <div className="card">
-      <div className="card-title">피드백 작성 {existing && <span className="badge badge-green">등록됨</span>}</div>
+      <OtherFeedbacks list={others} />
+      <div className="card-title">내 피드백 {existing ? <span className="badge badge-green">등록됨</span> : <span className="badge badge-violet">작성 전</span>}</div>
+      <div className="xs muted mb-8">피드백은 교사별로 따로 저장되며 작성한 교사만 수정할 수 있습니다. 다른 교사의 피드백은 위에서 조회만 됩니다.</div>
       <Field label="피드백 작성 교사" required><input className="input" value={f.teacherName} onChange={(e) => setF({ ...f, teacherName: e.target.value })} /></Field>
       <div className="row" style={{ alignItems: 'flex-start' }}>
         <Field label="면접 진행일" required hint={f.dateIso ? `표시: ${formatKoDate(f.dateIso)}` : '매번 직접 선택'}><input className="input" type="date" value={f.dateIso} onChange={(e) => setF({ ...f, dateIso: e.target.value })} /></Field>
@@ -313,8 +320,45 @@ function FeedbackCard({ booking: b, uid, teacherDisplayName, onSaved }) {
       )}
 
       <label className="checkbox mt-16 mb-16"><input type="checkbox" checked={f.notify} onChange={(e) => setF({ ...f, notify: e.target.checked })} /><span>이메일로 알림 발송 ("피드백이 등록되었습니다")</span></label>
-      <button className="btn btn-violet btn-full" onClick={save} disabled={busy || !canSave}><Save size={16} />{busy ? '저장 중…' : existing ? '피드백 수정 저장' : '저장 (상태 → 완료)'}</button>
+      <button className="btn btn-violet btn-full" onClick={save} disabled={busy || !canSave}><Save size={16} />{busy ? '저장 중…' : existing ? '내 피드백 수정 저장' : (others.length ? '내 피드백 저장' : '저장 (상태 → 완료)')}</button>
       {existing && <div className="xs muted mt-8">최초 작성: {existing.createdByName || '-'} {formatDateTime(existing.createdAt)} · 마지막 수정: {existing.updatedByName || '-'} {formatDateTime(existing.updatedAt)}</div>}
+    </div>
+  );
+}
+
+/* ── 다른 교사가 작성한 피드백 (조회 전용) ── */
+function OtherFeedbacks({ list }) {
+  const [open, setOpen] = useState({});
+  if (!list.length) return null;
+  return (
+    <div className="mb-16">
+      <div className="card-title" style={{ fontSize: 14 }}>다른 교사 피드백 <span className="badge badge-gray">{list.length}건 · 조회 전용</span></div>
+      <div className="stack" style={{ gap: 8 }}>
+        {list.map((f) => {
+          const isOpen = !!open[f.id];
+          const hasPdf = f.fileType === 'pdf' && f.fileUrl;
+          return (
+            <div key={f.id} style={{ borderLeft: '3px solid #C4B5FD', paddingLeft: 10 }}>
+              <div className="row-between wrap">
+                <span className="small bold">{f.teacherName || f.createdByName || '-'} <span className="muted" style={{ fontWeight: 400 }}>· {f.interviewDate || '-'} {f.interviewTime || ''}</span></span>
+                <button type="button" className="btn btn-ghost btn-xs" onClick={() => setOpen((o) => ({ ...o, [f.id]: !isOpen }))}>{isOpen ? '본문 닫기' : '본문 보기'}</button>
+              </div>
+              <div className="xs mt-8" style={{ whiteSpace: 'pre-line' }}>{f.summary || '(요약 없음)'}</div>
+              <div className="xs muted">마지막 수정: {f.updatedByName || '-'} {formatDateTime(f.updatedAt)}</div>
+              {isOpen && (
+                <div className="mt-8">
+                  {f.fileUrl && (
+                    <div className="file-card mb-8"><FileText size={16} color="#7C3AED" /><span className="grow ellipsis">{f.fileName}</span>
+                      <a className="btn btn-outline btn-xs" href={f.fileUrl} target="_blank" rel="noopener noreferrer">열기</a></div>
+                  )}
+                  {f.contentMd ? <Markdown>{f.contentMd}</Markdown> : (hasPdf ? <iframe title={`피드백 ${f.teacherName || ''}`} src={f.fileUrl} style={{ width: '100%', height: 420, border: 0, borderRadius: 12 }} /> : <div className="xs muted">본문이 없습니다.</div>)}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <div className="divider" />
     </div>
   );
 }

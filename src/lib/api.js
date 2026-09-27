@@ -215,13 +215,10 @@ export async function updateBookingAsTeacher(booking, patch, teacherUid) {
   return { moved: true, newId: bookingId(newDate, newPeriod) };
 }
 async function moveBookingChildren(oldId, newId) {
-  const fbRef = doc(db, 'feedbacks', oldId);
-  const fbSnap = await getDoc(fbRef);
   const batch = writeBatch(db);
-  if (fbSnap.exists()) {
-    batch.set(doc(db, 'feedbacks', newId), { ...fbSnap.data(), bookingId: newId });
-    batch.delete(fbRef);
-  }
+  // 피드백은 교사별 문서(작성자만 수정 가능). 다른 교사 문서도 옮겨야 하므로 규칙이 허용하는 bookingId 필드만 갱신한다(문서 id는 유지).
+  const fbs = await getDocs(query(col('feedbacks'), where('bookingId', '==', oldId)));
+  fbs.docs.forEach((f) => batch.update(f.ref, { bookingId: newId }));
   const memos = await getDocs(query(col('memos'), where('bookingId', '==', oldId)));
   memos.docs.forEach((m) => {
     const data = m.data();
@@ -291,10 +288,20 @@ export async function getMemo(bookingId, teacherUid) {
 export const saveMemo = (bookingId, teacherUid, content) =>
   setDoc(doc(db, 'memos', `${bookingId}_${teacherUid}`), { bookingId, teacherUid, content, updatedAt: serverTimestamp() });
 
-/* ───────────────────────── feedbacks ───────────────────────── */
-export async function getFeedback(bookingId) {
-  const snap = await getDoc(doc(db, 'feedbacks', bookingId));
-  return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+/* ───────────────────────── feedbacks (교사별 문서, 작성자만 수정) ─────────────────────────
+ * 문서 id: `${bookingId}_${teacherUid}` (구형 문서는 `${bookingId}` 하나뿐이고 teacherUid 없음 → createdBy 로 작성자 판정)
+ * 조회는 항상 bookingId 필드 기준이라 구형·신형이 함께 나온다. 일정 이동 시에도 id는 두고 bookingId 만 바꾼다.
+ */
+const tsMs = (t) => (t?.toMillis ? t.toMillis() : t ? new Date(t).getTime() : 0);
+const sortFeedbacks = (rows) => rows.sort((a, b) => tsMs(a.createdAt) - tsMs(b.createdAt));
+/** 이 피드백 문서를 uid 교사가 수정할 수 있는가 (규칙의 owner() 와 동일 조건) */
+export const isFeedbackOwner = (fb, uid) => !!fb && !!uid && (fb.teacherUid ? fb.teacherUid === uid : fb.createdBy === uid);
+/** 한 신청 건의 피드백 전부(작성순). 학생은 자기 학번 조건을 함께 걸어야 규칙을 통과한다. */
+export async function getFeedbacksForBooking(bookingId, { studentId } = {}) {
+  const conds = [where('bookingId', '==', bookingId)];
+  if (studentId) conds.push(where('studentId', '==', studentId));
+  const snap = await getDocs(query(col('feedbacks'), ...conds));
+  return sortFeedbacks(snapToList(snap));
 }
 export async function getFeedbacksByStudent(studentId) {
   const snap = await getDocs(query(col('feedbacks'), where('studentId', '==', studentId)));
@@ -326,18 +333,24 @@ export async function deleteStorageFile(path) {
   try { await deleteObject(sRef(storage, path)); } catch { /* 없으면 무시 */ }
 }
 /**
- * 피드백 저장 + booking.status → done
+ * 내 피드백 저장(교사별 문서) + booking.status → done.
+ * 이미 내 문서가 있으면 그 문서를 갱신(일정 이동으로 id가 달라졌어도 bookingId 로 찾음), 없으면 `${bookingId}_${uid}` 로 생성.
+ * booking.feedbackTeacherName 은 이 건의 모든 피드백 작성 교사명을 ", " 로 이어 붙인다.
  */
 export async function saveFeedback(bookingId, data, { uid, teacherDisplayName }) {
-  const ref = doc(db, 'feedbacks', bookingId);
-  const prev = await getDoc(ref);
-  const base = prev.exists()
-    ? { updatedAt: serverTimestamp(), updatedBy: uid, updatedByName: teacherDisplayName }
-    : { createdBy: uid, createdByName: teacherDisplayName, createdAt: serverTimestamp(), updatedAt: serverTimestamp(), updatedBy: uid, updatedByName: teacherDisplayName };
+  const all = await getFeedbacksForBooking(bookingId);
+  const mine = all.find((f) => isFeedbackOwner(f, uid));
+  const ref = mine ? doc(db, 'feedbacks', mine.id) : doc(db, 'feedbacks', `${bookingId}_${uid}`);
+  const stamp = { updatedAt: serverTimestamp(), updatedBy: uid, updatedByName: teacherDisplayName };
+  const base = mine
+    ? stamp
+    : { createdBy: uid, createdByName: teacherDisplayName, createdAt: serverTimestamp(), ...stamp };
+  const names = [...all.filter((f) => f.id !== ref.id).map((f) => f.teacherName), data.teacherName].map((n) => (n || '').trim()).filter(Boolean);
   const batch = writeBatch(db);
-  batch.set(ref, { bookingId, ...data, ...base }, { merge: true });
-  batch.update(doc(db, 'bookings', bookingId), { status: 'done', updatedAt: serverTimestamp(), updatedBy: uid, feedbackTeacherName: data.teacherName });
+  batch.set(ref, { bookingId, teacherUid: uid, ...data, ...base }, { merge: true });
+  batch.update(doc(db, 'bookings', bookingId), { status: 'done', updatedAt: serverTimestamp(), updatedBy: uid, feedbackTeacherName: [...new Set(names)].join(', ') });
   await batch.commit();
+  return ref.id;
 }
 
 /* ───────────────────────── mail ───────────────────────── */

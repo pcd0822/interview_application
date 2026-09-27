@@ -131,10 +131,25 @@ service cloud.firestore {
         && memoId == request.resource.data.bookingId + '_' + request.auth.uid;
     }
 
-    /* ───────── feedbacks ───────── */
-    match /feedbacks/{bookingId} {
+    /* ───────── feedbacks (교사별 문서 `${bookingId}_${teacherUid}`, 작성자만 수정) ─────────
+       - 구형 문서(id == bookingId, teacherUid 없음)는 createdBy 를 작성자로 본다.
+       - 모든 교사가 읽을 수 있고(공동 교사 피드백 조회), 학생은 자기 학번 것만 읽는다.
+       - 일정 이동 시 다른 교사 문서의 bookingId 만 바꾸는 갱신은 허용(그 외 필드는 못 건드림). */
+    match /feedbacks/{feedbackId} {
+      function fbOwner() {
+        return ('teacherUid' in resource.data)
+          ? resource.data.teacherUid == request.auth.uid
+          : resource.data.createdBy == request.auth.uid;
+      }
       allow read: if isTeacher() || (isStudent() && resource.data.studentId == sid());
-      allow write: if isTeacher();
+      allow create: if isTeacher()
+        && request.resource.data.teacherUid == request.auth.uid
+        && request.resource.data.createdBy == request.auth.uid
+        && feedbackId == request.resource.data.bookingId + '_' + request.auth.uid;
+      allow update: if isTeacher()
+        && ((fbOwner() && request.resource.data.teacherUid == request.auth.uid)
+            || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['bookingId']));
+      allow delete: if isTeacher() && fbOwner();
     }
 
     /* ───────── mailLogs ───────── */
