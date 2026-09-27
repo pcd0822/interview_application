@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { MessagesSquare, Save, Upload, FileText, Trash2, Search } from 'lucide-react';
+import { MessagesSquare, Save, Upload, FileText, Trash2, Search, List } from 'lucide-react';
 import { PageHeader } from './TeacherLayout';
 import { StatusBadge, Markdown, Field, Spinner } from '../../components/common';
 import { todayIso, formatKoDate, timeOptions, formatDateTime, koDateToIso } from '../../lib/date';
+import { BOOKING_STATUS } from '../../lib/constants';
 import {
-  getUpcomingBookings, getBooking, getStudent, getStudentBookings, getFeedbacksByStudent,
+  getUpcomingBookings, getAllBookings, searchBookings, getBooking, getStudent, getStudentBookings, getFeedbacksByStudent,
   getMemo, saveMemo, setBookingStatus, getFeedback, saveFeedback, uploadFeedbackFile, deleteStorageFile,
   sendMailSafe, bookingVars,
 } from '../../lib/api';
@@ -23,20 +24,51 @@ export default function InterviewPage() {
   const bookingId = params.get('bookingId');
   const [list, setList] = useState(null);
   const [q, setQ] = useState('');
+  // mode: 'upcoming'(오늘·예정 건) | 'search'(학번·이름 검색, 전체 기간) | 'all'(전체 조회)
+  const [mode, setMode] = useState('upcoming');
+  const [listBusy, setListBusy] = useState(false);
   const [booking, setBooking] = useState(null);
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => { getUpcomingBookings(todayIso()).then(setList).catch((e) => toast.error(errMsg(e))); }, []);
+  const loadUpcoming = useCallback(async () => {
+    setListBusy(true);
+    try { setList(await getUpcomingBookings(todayIso())); setMode('upcoming'); }
+    catch (e) { toast.error(errMsg(e)); }
+    finally { setListBusy(false); }
+  }, []);
+  const runSearch = useCallback(async () => {
+    const k = q.trim();
+    if (!k) { loadUpcoming(); return; }
+    setListBusy(true);
+    try {
+      const rows = await searchBookings(k);
+      setList(rows); setMode('search');
+      if (!rows.length) toast.info(`「${k}」로 시작하는 학번·이름의 신청 건이 없습니다.`);
+    } catch (e) { toast.error(errMsg(e)); }
+    finally { setListBusy(false); }
+  }, [q, loadUpcoming]);
+  const loadAll = useCallback(async () => {
+    setListBusy(true);
+    try { setList(await getAllBookings()); setMode('all'); setQ(''); }
+    catch (e) { toast.error(errMsg(e)); }
+    finally { setListBusy(false); }
+  }, []);
+
+  useEffect(() => { loadUpcoming(); }, [loadUpcoming]);
   useEffect(() => {
     if (!bookingId) { setBooking(null); return; }
     setLoading(true);
     getBooking(bookingId).then((b) => { setBooking(b); if (!b) toast.error('신청 건을 찾을 수 없습니다.'); }).finally(() => setLoading(false));
   }, [bookingId]);
 
+  // 검색·전체 조회 결과는 서버에서 받은 그대로(완료 건 포함). 기본(예정) 목록만 입력 중 즉시 필터 + 완료 제외.
   const options = useMemo(() => {
+    const rows = list || [];
+    if (mode !== 'upcoming') return rows;
     const k = q.trim().toLowerCase();
-    return (list || []).filter((b) => b.status !== 'done' && (!k || b.studentId.includes(k) || b.studentName.toLowerCase().includes(k)));
-  }, [list, q]);
+    return rows.filter((b) => b.status !== 'done' && (!k || String(b.studentId || '').includes(k) || String(b.studentName || '').toLowerCase().includes(k)));
+  }, [list, q, mode]);
+  const placeholder = mode === 'search' ? `검색 결과 ${options.length}건 — 신청 건을 선택하세요` : mode === 'all' ? `전체 ${options.length}건 — 신청 건을 선택하세요` : '신청 건을 선택하세요 (오늘·예정 건)';
 
   const refreshBooking = useCallback(async () => { if (bookingId) setBooking(await getBooking(bookingId)); }, [bookingId]);
   const teacherDisplayName = teacher?.displayName || user?.displayName || '';
@@ -46,14 +78,21 @@ export default function InterviewPage() {
       <PageHeader icon={MessagesSquare} title="모의면접" accent="accent-violet" />
       <div className="card mb-16" style={{ padding: 14 }}>
         <div className="row wrap">
-          <div className="row" style={{ position: 'relative' }}><Search size={16} style={{ position: 'absolute', left: 12, color: '#6B7280' }} /><input className="input" style={{ paddingLeft: 34, width: 220, minHeight: 40 }} placeholder="학번·이름 검색" value={q} onChange={(e) => setQ(e.target.value)} /></div>
+          <form className="row" style={{ position: 'relative' }} onSubmit={(e) => { e.preventDefault(); runSearch(); }}>
+            <Search size={16} style={{ position: 'absolute', left: 12, color: '#6B7280', pointerEvents: 'none' }} />
+            <input className="input" style={{ paddingLeft: 34, width: 200, minHeight: 40 }} placeholder="학번·이름 검색" value={q} onChange={(e) => setQ(e.target.value)} aria-label="학번·이름 검색" />
+            <button type="submit" className="btn btn-violet btn-sm" disabled={listBusy}>{listBusy && mode !== 'all' ? '검색 중…' : '검색'}</button>
+            <button type="button" className="btn btn-outline btn-sm" onClick={loadAll} disabled={listBusy}><List size={15} />전체 조회</button>
+            {mode !== 'upcoming' && <button type="button" className="btn btn-ghost btn-sm" onClick={() => { setQ(''); loadUpcoming(); }} disabled={listBusy}>예정 건만</button>}
+          </form>
           <select className="select grow" style={{ minHeight: 40, maxWidth: 520 }} value={bookingId || ''} onChange={(e) => setParams(e.target.value ? { bookingId: e.target.value } : {})}>
-            <option value="">신청 건을 선택하세요 (오늘·예정 건)</option>
-            {options.map((b) => <option key={b.id} value={b.id}>{formatKoDate(b.date)} {b.periodLabel} · {b.studentId} {b.studentName} · {b.targetUniversity}</option>)}
+            <option value="">{placeholder}</option>
+            {options.map((b) => <option key={b.id} value={b.id}>{formatKoDate(b.date)} {b.periodLabel} · {b.studentId} {b.studentName} · {b.targetUniversity}{mode !== 'upcoming' && BOOKING_STATUS[b.status] ? ` · ${BOOKING_STATUS[b.status].label}` : ''}</option>)}
             {bookingId && !options.some((b) => b.id === bookingId) && <option value={bookingId}>{bookingId} (선택됨)</option>}
           </select>
           {booking && <StatusBadge status={booking.status} />}
         </div>
+        <div className="xs muted mt-8">검색은 학번·이름 앞글자 기준이며 지난 면접 건까지 모두 찾습니다. 전체 조회는 모든 신청 건을 최신순으로 보여 줍니다.</div>
       </div>
 
       {loading && <Spinner />}

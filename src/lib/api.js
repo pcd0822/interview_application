@@ -265,6 +265,23 @@ export async function getUpcomingBookings(fromIso, max = 200) {
   const snap = await getDocs(query(col('bookings'), where('date', '>=', fromIso), orderBy('date'), limit(max)));
   return snapToList(snap);
 }
+/**
+ * 학번·이름 접두 검색 — 날짜 무관 전체 기간.
+ * 단일 필드 범위 쿼리 두 개(studentId, studentName)를 합쳐 중복 제거 후 날짜 내림차순.
+ * 복합 인덱스 불필요.
+ */
+export async function searchBookings(keyword, max = 100) {
+  const k = String(keyword || '').trim();
+  if (!k) return [];
+  const end = k + '';
+  const [byId, byName] = await Promise.all([
+    getDocs(query(col('bookings'), where('studentId', '>=', k), where('studentId', '<=', end), limit(max))),
+    getDocs(query(col('bookings'), where('studentName', '>=', k), where('studentName', '<=', end), limit(max))),
+  ]);
+  const map = new Map();
+  [...snapToList(byId), ...snapToList(byName)].forEach((b) => map.set(b.id, b));
+  return [...map.values()].sort((a, b) => (a.date === b.date ? String(a.periodId).localeCompare(String(b.periodId)) : (a.date < b.date ? 1 : -1)));
+}
 
 /* ───────────────────────── memos (작성 교사 전용) ───────────────────────── */
 export async function getMemo(bookingId, teacherUid) {
