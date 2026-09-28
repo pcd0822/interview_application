@@ -17,12 +17,16 @@ const col = (name) => collection(db, name);
 const snapToList = (snap) => snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
 /* ───────────────────────── settings ───────────────────────── */
+// 예전 기본값에 붙어 있던 안내 문구. 저장된 템플릿에 남아 있으면 불러올 때 걷어낸다(설정 모달에서 저장하면 깨끗한 값으로 굳는다).
+const LEGACY_PLACEHOLDER = '(임시 문구입니다. 설정에서 수정하세요.)';
+const stripLegacyPlaceholder = (text) => String(text || '').split(LEGACY_PLACEHOLDER).join('').replace(/\n{3,}/g, '\n\n').trim();
 export async function getMailTemplates() {
   const snap = await getDoc(doc(db, 'settings', 'mailTemplates'));
   const data = snap.exists() ? snap.data() : {};
   const merged = {};
   for (const k of Object.keys(DEFAULT_MAIL_TEMPLATES)) {
-    merged[k] = { ...DEFAULT_MAIL_TEMPLATES[k], ...(data[k] || {}) };
+    const t = { ...DEFAULT_MAIL_TEMPLATES[k], ...(data[k] || {}) };
+    merged[k] = { ...t, subject: stripLegacyPlaceholder(t.subject), body: stripLegacyPlaceholder(t.body) };
   }
   return merged;
 }

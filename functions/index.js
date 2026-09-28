@@ -212,8 +212,13 @@ exports.purgeStudents = onCall({ timeoutSeconds: 540, memory: '512MiB' }, async 
 });
 
 /* ───────────── 메일 발송 (GAS 경유) ───────────── */
+// 예전 기본값에 붙어 있던 안내 문구. 설정에 저장된 템플릿에 남아 있어도 발송 본문에서는 항상 제거한다.
+const LEGACY_PLACEHOLDER = '(임시 문구입니다. 설정에서 수정하세요.)';
+function stripLegacyPlaceholder(text) {
+  return String(text || '').split(LEGACY_PLACEHOLDER).join('').replace(/\n{3,}/g, '\n\n').trim();
+}
 function fillTemplate(text, vars) {
-  let out = String(text || '');
+  let out = stripLegacyPlaceholder(text);
   for (const [k, v] of Object.entries(vars || {})) out = out.split(k).join(v ?? '');
   return out;
 }
