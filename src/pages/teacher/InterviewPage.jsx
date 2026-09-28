@@ -7,7 +7,7 @@ import { todayIso, formatKoDate, timeOptions, formatDateTime, koDateToIso } from
 import { BOOKING_STATUS } from '../../lib/constants';
 import {
   getUpcomingBookings, getAllBookings, searchBookings, getBooking, getStudent, getStudentBookings, getFeedbacksByStudent,
-  getMemo, saveMemo, setBookingStatus, getFeedbacksForBooking, isFeedbackOwner, saveFeedback, uploadFeedbackFile, deleteStorageFile,
+  getMemo, saveMemo, setBookingStatus, getFeedbacksForBooking, isFeedbackOwner, belongsToBooking, saveFeedback, uploadFeedbackFile, deleteStorageFile,
   sendMailSafe, bookingVars,
 } from '../../lib/api';
 import { useAuth } from '../../store/auth';
@@ -119,7 +119,8 @@ function StudentInfoCard({ booking: b }) {
       // 교사별 피드백이 여러 개일 수 있으므로 bookingId 로 묶는다
       const fbMap = {};
       fbs.forEach((f) => { (fbMap[f.bookingId] ||= []).push(f); });
-      setHistory(bk.filter((x) => x.id !== b.id).map((x) => ({ ...x, feedbacks: fbMap[x.id] || [] })));
+      // 삭제 후 재신청으로 id 가 같아진 예전 피드백은 해당 신청의 생성 시각으로 걸러낸다
+      setHistory(bk.filter((x) => x.id !== b.id).map((x) => ({ ...x, feedbacks: (fbMap[x.id] || []).filter((f) => belongsToBooking(f, x)) })));
     })();
   }, [b.id, b.studentId]);
   return (
@@ -163,7 +164,7 @@ function MemoCard({ booking: b, uid, onStatusChange }) {
   const dirty = useRef(false);
   const latest = useRef('');
   useEffect(() => {
-    getMemo(b.id, uid)
+    getMemo(b.id, uid, b)
       .catch((e) => { console.warn('memo load', e); toast.error('메모를 불러오지 못했습니다. 빈 메모로 시작합니다.'); return null; })
       .then((m) => { setContent(m?.content || ''); latest.current = m?.content || ''; setSavedAt(m?.updatedAt || null); setLoaded(true); });
   }, [b.id, uid]);
@@ -211,7 +212,7 @@ function FeedbackCard({ booking: b, uid, teacherDisplayName, onSaved }) {
   const inputRef = useRef();
 
   useEffect(() => {
-    getFeedbacksForBooking(b.id).then((rows) => {
+    getFeedbacksForBooking(b.id, { booking: b }).then((rows) => {
       setAll(rows);
       const fb = rows.find((x) => isFeedbackOwner(x, uid));
       if (fb) {
@@ -266,14 +267,14 @@ function FeedbackCard({ booking: b, uid, teacherDisplayName, onSaved }) {
         interviewDate: formatKoDate(f.dateIso), interviewDateIso: f.dateIso, interviewTime: `${f.start}~${f.end}`,
         summary: f.summary.trim(), contentMd, fileUrl, fileName, fileType, filePath, notifiedByEmail: !!f.notify,
       };
-      await saveFeedback(b.id, data, { uid, teacherDisplayName });
+      await saveFeedback(b.id, data, { uid, teacherDisplayName, booking: b });
       let msg = '피드백을 저장했습니다. 상태가 「완료」로 바뀌었습니다.';
       if (f.notify) {
         const r = await sendMailSafe({ studentId: b.studentId, templateKey: 'feedbackDone', vars: bookingVars(b) });
         if (r.ok === false) toast.error(`메일 발송 실패: ${r.error || ''}`); else msg += ' 안내 메일을 발송했습니다.';
       }
       toast.success(msg);
-      setAll(await getFeedbacksForBooking(b.id));
+      setAll(await getFeedbacksForBooking(b.id, { booking: b }));
       await onSaved();
     } catch (e) { toast.error(errMsg(e)); } finally { setBusy(false); setProgress(null); }
   };

@@ -21,7 +21,8 @@ export default function FeedbackDetail() {
       const b = await getBooking(bookingId).catch(() => null);
       setBooking(b);
       // 자기 학번 조건을 함께 걸어야 규칙(studentId == 본인)을 통과한다. 실패하면 "미등록"으로 처리.
-      const rows = b ? await getFeedbacksForBooking(bookingId, { studentId: student.studentId }).catch(() => []) : [];
+      // booking 을 함께 넘겨 삭제 후 재신청으로 id 가 같아진 예전 피드백은 제외한다.
+      const rows = b ? await getFeedbacksForBooking(bookingId, { studentId: student.studentId, booking: b }).catch(() => []) : [];
       setFbs(rows);
     })();
   }, [bookingId, student.studentId]);

@@ -125,7 +125,13 @@ service cloud.firestore {
     match /memos/{memoId} {
       // 아직 없는 메모(resource == null)는 읽기 허용해야 첫 진입 시 permission-denied 로 멈추지 않음
       allow read: if isTeacher() && (resource == null || resource.data.teacherUid == request.auth.uid);
-      allow delete: if isTeacher() && resource.data.teacherUid == request.auth.uid;
+      // 삭제: 내 메모, 또는 신청이 (이 배치 안에서) 사라지는 메모는 누구든 삭제 가능(삭제된 신청의 잔재가 재신청 건에 붙는 것을 막음).
+      // 없는 문서(resource == null) 삭제는 no-op 이라 허용 — 삭제 시 교사 명단으로 id 를 만들어 일괄 삭제하기 때문.
+      allow delete: if isTeacher()
+        && (resource == null
+            || resource.data.teacherUid == request.auth.uid
+            || !('bookingId' in resource.data)
+            || !existsAfter(/databases/$(db)/documents/bookings/$(resource.data.bookingId)));
       allow create, update: if isTeacher()
         && request.resource.data.teacherUid == request.auth.uid
         && memoId == request.resource.data.bookingId + '_' + request.auth.uid;

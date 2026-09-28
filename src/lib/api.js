@@ -215,15 +215,16 @@ export async function updateBookingAsTeacher(booking, patch, teacherUid) {
     }
     // 메모·피드백은 bookingId 기반이므로 함께 이동
   });
-  await moveBookingChildren(booking.id, bookingId(newDate, newPeriod));
+  await moveBookingChildren(booking.id, bookingId(newDate, newPeriod), teacherUid);
   return { moved: true, newId: bookingId(newDate, newPeriod) };
 }
-async function moveBookingChildren(oldId, newId) {
+async function moveBookingChildren(oldId, newId, teacherUid) {
   const batch = writeBatch(db);
   // 피드백은 교사별 문서(작성자만 수정 가능). 다른 교사 문서도 옮겨야 하므로 규칙이 허용하는 bookingId 필드만 갱신한다(문서 id는 유지).
   const fbs = await getDocs(query(col('feedbacks'), where('bookingId', '==', oldId)));
   fbs.docs.forEach((f) => batch.update(f.ref, { bookingId: newId }));
-  const memos = await getDocs(query(col('memos'), where('bookingId', '==', oldId)));
+  // 메모는 작성 교사만 읽을 수 있어 내 메모만 옮길 수 있다(teacherUid 조건이 없으면 규칙이 쿼리 자체를 거부한다).
+  const memos = await getDocs(query(col('memos'), where('bookingId', '==', oldId), where('teacherUid', '==', teacherUid)));
   memos.docs.forEach((m) => {
     const data = m.data();
     batch.set(doc(db, 'memos', `${newId}_${data.teacherUid}`), { ...data, bookingId: newId });
@@ -231,8 +232,21 @@ async function moveBookingChildren(oldId, newId) {
   });
   await batch.commit();
 }
+/**
+ * 교사 삭제. 신청 id 가 `날짜_교시` 슬롯 기반이라 같은 시간에 다시 신청하면 같은 id 가 재사용된다.
+ * 그래서 피드백·메모를 남겨 두면 새 신청에 예전 내용이 붙어 버리므로 함께 정리한다.
+ *  - 피드백: 문서는 남기되 bookingId 를 삭제 표식으로 바꿔 새 신청과 연결을 끊는다(규칙상 다른 교사 문서도 bookingId 만은 갱신 가능).
+ *  - 메모: 교사별 문서 id(`신청id_교사uid`)를 교사 명단으로 만들어 모두 삭제한다(규칙: 신청이 사라지는 배치 안에서는 누구 메모든 삭제 가능).
+ */
 export async function deleteBookingAsTeacher(booking) {
+  const [fbs, teachers] = await Promise.all([
+    getDocs(query(col('feedbacks'), where('bookingId', '==', booking.id))),
+    getDocs(col('teachers')),
+  ]);
+  const marker = detachedBookingId(booking.id);
   const batch = writeBatch(db);
+  fbs.docs.forEach((f) => batch.update(f.ref, { bookingId: marker }));
+  teachers.docs.forEach((t) => batch.delete(doc(db, 'memos', `${booking.id}_${t.id}`)));
   batch.delete(doc(db, 'bookings', booking.id));
   batch.set(doc(db, 'studentDailyCounts', `${booking.date}_${booking.studentId}`), { date: booking.date, studentId: booking.studentId, count: increment(-1) }, { merge: true });
   await batch.commit();
@@ -285,9 +299,12 @@ export async function searchBookings(keyword, max = 100) {
 }
 
 /* ───────────────────────── memos (작성 교사 전용) ───────────────────────── */
-export async function getMemo(bookingId, teacherUid) {
+/** 내 메모. booking 을 주면 삭제 전 신청의 잔재(신청 생성 시각보다 먼저 갱신된 메모)는 없는 것으로 본다. */
+export async function getMemo(bookingId, teacherUid, booking) {
   const snap = await getDoc(doc(db, 'memos', `${bookingId}_${teacherUid}`));
-  return snap.exists() ? snap.data() : null;
+  if (!snap.exists()) return null;
+  const m = snap.data();
+  return booking && !belongsToBooking(m, booking) ? null : m;
 }
 export const saveMemo = (bookingId, teacherUid, content) =>
   setDoc(doc(db, 'memos', `${bookingId}_${teacherUid}`), { bookingId, teacherUid, content, updatedAt: serverTimestamp() });
@@ -298,14 +315,28 @@ export const saveMemo = (bookingId, teacherUid, content) =>
  */
 const tsMs = (t) => (t?.toMillis ? t.toMillis() : t ? new Date(t).getTime() : 0);
 const sortFeedbacks = (rows) => rows.sort((a, b) => tsMs(a.createdAt) - tsMs(b.createdAt));
+/** 삭제된 신청에서 떼어낸 자식 문서에 넣는 bookingId 표식. 슬롯 id 와 절대 겹치지 않는다. */
+export const detachedBookingId = (id) => `${id}#deleted_${Date.now()}`;
+/**
+ * 자식 문서(피드백·메모)가 이 신청 인스턴스에 속하는가.
+ * 신청 id 가 슬롯 기반이라 삭제 후 재신청하면 id 가 같아지므로, 신청 생성 시각보다 먼저 만들어진(갱신된) 문서는 삭제 전 신청의 잔재로 본다.
+ * 신청 시각·문서 시각이 없는 구형 데이터는 속한 것으로 본다.
+ */
+export function belongsToBooking(child, booking) {
+  if (!child || !booking?.createdAt) return true;
+  const stamp = child.createdAt || child.updatedAt;
+  if (!stamp) return true;
+  return tsMs(stamp) >= tsMs(booking.createdAt);
+}
 /** 이 피드백 문서를 uid 교사가 수정할 수 있는가 (규칙의 owner() 와 동일 조건) */
 export const isFeedbackOwner = (fb, uid) => !!fb && !!uid && (fb.teacherUid ? fb.teacherUid === uid : fb.createdBy === uid);
-/** 한 신청 건의 피드백 전부(작성순). 학생은 자기 학번 조건을 함께 걸어야 규칙을 통과한다. */
-export async function getFeedbacksForBooking(bookingId, { studentId } = {}) {
+/** 한 신청 건의 피드백 전부(작성순). 학생은 자기 학번 조건을 함께 걸어야 규칙을 통과한다. booking 을 주면 삭제 전 신청의 잔재는 제외. */
+export async function getFeedbacksForBooking(bookingId, { studentId, booking } = {}) {
   const conds = [where('bookingId', '==', bookingId)];
   if (studentId) conds.push(where('studentId', '==', studentId));
   const snap = await getDocs(query(col('feedbacks'), ...conds));
-  return sortFeedbacks(snapToList(snap));
+  const rows = snapToList(snap).filter((f) => !booking || belongsToBooking(f, booking));
+  return sortFeedbacks(rows);
 }
 export async function getFeedbacksByStudent(studentId) {
   const snap = await getDocs(query(col('feedbacks'), where('studentId', '==', studentId)));
@@ -341,8 +372,11 @@ export async function deleteStorageFile(path) {
  * 이미 내 문서가 있으면 그 문서를 갱신(일정 이동으로 id가 달라졌어도 bookingId 로 찾음), 없으면 `${bookingId}_${uid}` 로 생성.
  * booking.feedbackTeacherName 은 이 건의 모든 피드백 작성 교사명을 ", " 로 이어 붙인다.
  */
-export async function saveFeedback(bookingId, data, { uid, teacherDisplayName }) {
-  const all = await getFeedbacksForBooking(bookingId);
+export async function saveFeedback(bookingId, data, { uid, teacherDisplayName, booking }) {
+  const allRaw = await getFeedbacksForBooking(bookingId);
+  // 삭제 전 신청의 잔재가 아직 붙어 있으면(예전 삭제 로직으로 남은 데이터) 저장하는 김에 떼어낸다.
+  const stale = booking ? allRaw.filter((f) => !belongsToBooking(f, booking)) : [];
+  const all = allRaw.filter((f) => !stale.includes(f));
   const mine = all.find((f) => isFeedbackOwner(f, uid));
   const ref = mine ? doc(db, 'feedbacks', mine.id) : doc(db, 'feedbacks', `${bookingId}_${uid}`);
   const stamp = { updatedAt: serverTimestamp(), updatedBy: uid, updatedByName: teacherDisplayName };
@@ -351,6 +385,18 @@ export async function saveFeedback(bookingId, data, { uid, teacherDisplayName })
     : { createdBy: uid, createdByName: teacherDisplayName, createdAt: serverTimestamp(), ...stamp };
   const names = [...all.filter((f) => f.id !== ref.id).map((f) => f.teacherName), data.teacherName].map((n) => (n || '').trim()).filter(Boolean);
   const batch = writeBatch(db);
+  if (stale.length) {
+    const marker = detachedBookingId(bookingId);
+    for (const s of stale) {
+      if (s.id === ref.id) {
+        // 내 새 문서와 id 가 겹치는 잔재는 사본(`표식_uid`)으로 옮겨 두고 원본 자리는 아래 set 이 덮어쓴다.
+        const { id, ...rest } = s;
+        batch.set(doc(db, 'feedbacks', `${marker}_${uid}`), { ...rest, bookingId: marker, teacherUid: uid, createdBy: uid });
+      } else {
+        batch.update(doc(db, 'feedbacks', s.id), { bookingId: marker });
+      }
+    }
+  }
   batch.set(ref, { bookingId, teacherUid: uid, ...data, ...base }, { merge: true });
   batch.update(doc(db, 'bookings', bookingId), { status: 'done', updatedAt: serverTimestamp(), updatedBy: uid, feedbackTeacherName: [...new Set(names)].join(', ') });
   await batch.commit();

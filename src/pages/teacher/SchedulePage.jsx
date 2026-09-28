@@ -318,7 +318,7 @@ function BookingsTab() {
 
 function BookingDetail({ booking: b, onInterview, onEdit, onDelete }) {
   const [fbs, setFbs] = useState(undefined);
-  useEffect(() => { setFbs(undefined); getFeedbacksForBooking(b.id).then(setFbs).catch(() => setFbs([])); }, [b.id]);
+  useEffect(() => { setFbs(undefined); getFeedbacksForBooking(b.id, { booking: b }).then(setFbs).catch(() => setFbs([])); }, [b.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const fb = fbs === undefined ? undefined : (fbs.length ? { teacherName: fbs.map((f) => f.teacherName).filter(Boolean).join(', ') || '-', count: fbs.length } : null);
   return (
     <div>
