@@ -70,10 +70,16 @@ function FeedbackBody({ fb, index, booking, student }) {
         <div className="file-card mb-12">
           <FileText size={20} color="#2563EB" />
           <span className="grow ellipsis">{fb.fileName}</span>
-          {hasPdf && <a className="btn btn-outline btn-xs" href={fb.fileUrl} target="_blank" rel="noopener noreferrer">열기</a>}
+          <a className="btn btn-outline btn-xs" href={fb.fileUrl} target="_blank" rel="noopener noreferrer">열기</a>
         </div>
       )}
-      {markdown ? <Markdown>{markdown}</Markdown> : (hasPdf ? <div className="card"><iframe title={`피드백 PDF ${index || ''}`} src={fb.fileUrl} style={{ width: '100%', height: '70vh', border: 0, borderRadius: 12 }} /></div> : null)}
+      {/* 파일 「열기」 아래에 교사가 직접 입력한 내용을 그대로 보여 준다. PDF 미리보기는 직접 입력이 전혀 없을 때만 대체 표시. */}
+      {markdown ? (
+        <div>
+          {fb.fileUrl && <div className="small bold mb-8">선생님이 직접 입력한 피드백</div>}
+          <Markdown>{markdown}</Markdown>
+        </div>
+      ) : (hasPdf ? <div className="card"><iframe title={`피드백 PDF ${index || ''}`} src={fb.fileUrl} style={{ width: '100%', height: '70vh', border: 0, borderRadius: 12 }} /></div> : null)}
     </div>
   );
 }

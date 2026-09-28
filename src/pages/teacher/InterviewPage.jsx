@@ -201,7 +201,7 @@ function FeedbackCard({ booking: b, uid, teacherDisplayName, onSaved }) {
   const existing = useMemo(() => (all === undefined ? undefined : (all.find((x) => isFeedbackOwner(x, uid)) || null)), [all, uid]);
   const others = useMemo(() => (all || []).filter((x) => !isFeedbackOwner(x, uid)), [all, uid]);
   const [f, setF] = useState({ teacherName: teacherDisplayName, dateIso: '', start: '20:00', end: '22:00', summary: '', contentMd: '', notify: true });
-  const [mode, setMode] = useState('md'); // 'md' | 'file'
+  // 직접 입력과 파일 첨부는 함께 저장된다(둘 중 하나만 있어도 됨). 학생 화면에는 파일 카드 아래에 직접 입력 내용이 표시된다.
   const [preview, setPreview] = useState(false);
   const [file, setFile] = useState(null);       // 새로 선택한 File
   const [fileInfo, setFileInfo] = useState(null); // 저장된 {url,name,type,path}
@@ -216,8 +216,9 @@ function FeedbackCard({ booking: b, uid, teacherDisplayName, onSaved }) {
       const fb = rows.find((x) => isFeedbackOwner(x, uid));
       if (fb) {
         const [start, end] = (fb.interviewTime || '20:00~22:00').split('~');
-        setF({ teacherName: fb.teacherName || teacherDisplayName, dateIso: fb.interviewDateIso || koDateToIso(fb.interviewDate) || '', start, end, summary: fb.summary || '', contentMd: fb.fileType ? '' : (fb.contentMd || ''), notify: false });
-        if (fb.fileUrl) { setFileInfo({ url: fb.fileUrl, name: fb.fileName, type: fb.fileType, path: fb.filePath }); setMode('file'); }
+        // 파일이 첨부돼 있어도 직접 입력한 본문은 그대로 편집란에 복원한다(예전에는 파일이 있으면 비워져 보이지 않던 문제).
+        setF({ teacherName: fb.teacherName || teacherDisplayName, dateIso: fb.interviewDateIso || koDateToIso(fb.interviewDate) || '', start, end, summary: fb.summary || '', contentMd: fb.contentMd || '', notify: false });
+        if (fb.fileUrl) setFileInfo({ url: fb.fileUrl, name: fb.fileName, type: fb.fileType, path: fb.filePath });
       }
     }).catch((e) => { toast.error(errMsg(e)); setAll([]); });
   }, [b.id, uid, teacherDisplayName]);
@@ -229,16 +230,18 @@ function FeedbackCard({ booking: b, uid, teacherDisplayName, onSaved }) {
     setFile(fl);
   };
 
-  const hasBody = mode === 'md' ? !!f.contentMd.trim() : !!(file || fileInfo);
+  const typed = f.contentMd.trim();
+  const hasBody = !!typed || !!(file || fileInfo);
   const canSave = f.teacherName.trim() && f.dateIso && f.start && f.end && f.summary.trim() && hasBody;
 
   const save = async () => {
-    if (!canSave) return toast.error('필수 항목을 모두 입력하세요. 피드백 본문은 직접 입력 또는 파일 업로드 중 하나가 필요합니다.');
+    if (!canSave) return toast.error('필수 항목을 모두 입력하세요. 피드백 본문은 직접 입력하거나 파일을 첨부해야 합니다(둘 다 가능).');
     if (f.end <= f.start) return toast.error('종료 시간은 시작 시간보다 늦어야 합니다.');
     setBusy(true);
     try {
-      let fileUrl = null, fileName = null, fileType = null, filePath = null, contentMd = null;
-      if (mode === 'file') {
+      let fileUrl = null, fileName = null, fileType = null, filePath = null;
+      let contentMd = typed ? f.contentMd : null;
+      if (file || fileInfo) {
         let info = fileInfo;
         if (file) {
           setProgress(0);
@@ -252,12 +255,11 @@ function FeedbackCard({ booking: b, uid, teacherDisplayName, onSaved }) {
           setFileInfo(info); setFile(null);
         }
         fileUrl = info.url; fileName = info.name; fileType = info.type; filePath = info.path;
-        // md 파일은 본문 텍스트도 저장 → 학생 화면에서 파일을 다시 내려받지 않고 렌더링/PDF 변환
-        if (fileType === 'md') contentMd = file ? await file.text() : (existing?.contentMd || null);
-      } else {
-        contentMd = f.contentMd;
-        if (fileInfo?.path) await deleteStorageFile(fileInfo.path);
-        setFileInfo(null);
+        // md 파일만 첨부하고 직접 입력이 비어 있으면 파일 본문을 그대로 본문으로 저장 → 학생 화면에서 바로 렌더링/PDF 변환
+        if (fileType === 'md' && !contentMd) contentMd = file ? await file.text() : (existing?.contentMd || null);
+      } else if (existing?.filePath) {
+        // 첨부를 제거하고 저장 → 기존 파일 삭제
+        await deleteStorageFile(existing.filePath);
       }
       const data = {
         studentId: b.studentId, studentName: b.studentName, teacherName: f.teacherName.trim(),
@@ -293,33 +295,26 @@ function FeedbackCard({ booking: b, uid, teacherDisplayName, onSaved }) {
         <div className="counter" style={{ color: f.summary.length > 300 ? '#B45309' : undefined }}>{f.summary.length}/300</div>
       </Field>
 
-      <div className="field"><label>피드백 본문<span className="req">*</span> <span className="hint">(직접 입력 또는 파일 업로드 중 하나)</span></label>
-        <div className="subtabs accent-violet" style={{ alignSelf: 'flex-start' }}>
-          <button type="button" className={`subtab ${mode === 'md' ? 'active' : ''}`} onClick={() => setMode('md')}>직접 입력</button>
-          <button type="button" className={`subtab ${mode === 'file' ? 'active' : ''}`} onClick={() => setMode('file')}>파일 업로드</button>
-        </div>
+      <div className="field"><label>피드백 본문<span className="req">*</span> <span className="hint">직접 입력과 파일 첨부를 함께 쓸 수 있습니다. 둘 중 하나는 필요합니다.</span></label></div>
+      <div className="mb-16">
+        <div className="row-between mb-8"><span className="small bold">직접 입력 <span className="xs muted" style={{ fontWeight: 400 }}>· 마크다운(제목 #, 목록 -, 표 |) 지원</span></span><button type="button" className="btn btn-ghost btn-xs" onClick={() => setPreview((p) => !p)}>{preview ? '편집' : '미리보기'}</button></div>
+        {preview ? <Markdown>{f.contentMd}</Markdown> : <textarea className="textarea" rows={12} value={f.contentMd} onChange={(e) => setF({ ...f, contentMd: e.target.value })} placeholder={'## 잘한 점\n- ...\n\n## 보완할 점\n- ...\n\n## 예상 질문\n| 질문 | 조언 |\n|---|---|\n| ... | ... |'} />}
       </div>
-      {mode === 'md' ? (
-        <div>
-          <div className="row-between mb-8"><span className="xs muted">마크다운(제목 #, 목록 -, 표 |) 지원</span><button type="button" className="btn btn-ghost btn-xs" onClick={() => setPreview((p) => !p)}>{preview ? '편집' : '미리보기'}</button></div>
-          {preview ? <Markdown>{f.contentMd}</Markdown> : <textarea className="textarea" rows={12} value={f.contentMd} onChange={(e) => setF({ ...f, contentMd: e.target.value })} placeholder={'## 잘한 점\n- ...\n\n## 보완할 점\n- ...\n\n## 예상 질문\n| 질문 | 조언 |\n|---|---|\n| ... | ... |'} />}
+      <div>
+        <div className="small bold mb-8">파일 첨부 <span className="xs muted" style={{ fontWeight: 400 }}>· 선택 · 학생 화면에는 파일 「열기」 아래에 직접 입력 내용이 표시됩니다</span></div>
+        {(file || fileInfo) && (
+          <div className="file-card mb-8"><FileText size={18} color="#7C3AED" /><span className="grow ellipsis">{file ? `${file.name} (업로드 대기)` : fileInfo.name}</span>
+            <button type="button" className="btn btn-ghost btn-xs" onClick={() => { setFile(null); if (!file) setFileInfo(null); }} aria-label="파일 제거"><Trash2 size={14} /></button></div>
+        )}
+        <div className={`dropzone ${over ? 'over' : ''}`} onClick={() => inputRef.current?.click()}
+          onDragOver={(e) => { e.preventDefault(); setOver(true); }} onDragLeave={() => setOver(false)} onDrop={(e) => { e.preventDefault(); setOver(false); pickFile(e.dataTransfer.files?.[0]); }}>
+          <Upload size={22} style={{ marginBottom: 6 }} /><div>pdf 또는 md 파일을 끌어다 놓거나 클릭해서 선택 (크기 제한 없음)</div>
         </div>
-      ) : (
-        <div>
-          {(file || fileInfo) && (
-            <div className="file-card mb-8"><FileText size={18} color="#7C3AED" /><span className="grow ellipsis">{file ? `${file.name} (업로드 대기)` : fileInfo.name}</span>
-              <button type="button" className="btn btn-ghost btn-xs" onClick={() => { setFile(null); if (!file) setFileInfo(null); }} aria-label="파일 제거"><Trash2 size={14} /></button></div>
-          )}
-          <div className={`dropzone ${over ? 'over' : ''}`} onClick={() => inputRef.current?.click()}
-            onDragOver={(e) => { e.preventDefault(); setOver(true); }} onDragLeave={() => setOver(false)} onDrop={(e) => { e.preventDefault(); setOver(false); pickFile(e.dataTransfer.files?.[0]); }}>
-            <Upload size={22} style={{ marginBottom: 6 }} /><div>pdf 또는 md 파일을 끌어다 놓거나 클릭해서 선택 (크기 제한 없음)</div>
-          </div>
-          <input ref={inputRef} type="file" accept=".pdf,.md,application/pdf,text/markdown" hidden onChange={(e) => { pickFile(e.target.files?.[0]); e.target.value = ''; }} />
-          {progress !== null && <div className="mt-8"><div className="progress"><div style={{ width: `${progress}%` }} /></div><div className="xs muted mt-8">업로드 {progress}%</div></div>}
-        </div>
-      )}
+        <input ref={inputRef} type="file" accept=".pdf,.md,application/pdf,text/markdown" hidden onChange={(e) => { pickFile(e.target.files?.[0]); e.target.value = ''; }} />
+        {progress !== null && <div className="mt-8"><div className="progress"><div style={{ width: `${progress}%` }} /></div><div className="xs muted mt-8">업로드 {progress}%</div></div>}
+      </div>
 
-      <label className="checkbox mt-16 mb-16"><input type="checkbox" checked={f.notify} onChange={(e) => setF({ ...f, notify: e.target.checked })} /><span>이메일로 알림 발송 ("피드백이 등록되었습니다")</span></label>
+      <label className="checkbox mt-16 mb-16"><input type="checkbox" checked={f.notify} onChange={(e) => setF({ ...f, notify: e.target.checked })} /><span>이메일로 알림 발송</span></label>
       <button className="btn btn-violet btn-full" onClick={save} disabled={busy || !canSave}><Save size={16} />{busy ? '저장 중…' : existing ? '내 피드백 수정 저장' : (others.length ? '내 피드백 저장' : '저장 (상태 → 완료)')}</button>
       {existing && <div className="xs muted mt-8">최초 작성: {existing.createdByName || '-'} {formatDateTime(existing.createdAt)} · 마지막 수정: {existing.updatedByName || '-'} {formatDateTime(existing.updatedAt)}</div>}
     </div>

@@ -54,6 +54,7 @@
 - GAS URL/토큰은 `VITE_` 환경변수가 아니라 **Cloud Functions 파라미터/Secret**에 보관(클라이언트 번들 노출 방지). 메일 경로는 요구사항대로 React → Function → GAS.
 - 운영일지 서식(병합·굵게·테두리·열 너비)은 SheetJS 무료판이 지원하지 않아 **ExcelJS**로 생성. 명단 양식/업로드는 SheetJS 사용.
 - md 파일 업로드 시 본문 텍스트를 `feedbacks.contentMd`에도 저장 → 학생 화면에서 Storage CORS 설정 없이 렌더링·PDF 변환 가능.
+- 직접 입력(`contentMd`)과 파일 첨부(`fileUrl`)는 함께 저장된다. 학생 화면은 파일 카드(열기) 아래에 직접 입력 내용을 표시하고, PDF iframe 미리보기는 직접 입력이 없을 때만 대체 표시.
 - 비밀번호 초기화: Firebase Auth 최소 6자 제한 때문에 학번이 6자 미만이면 뒤에 `0`을 채운 값이 임시 비밀번호(모달·토스트에 안내).
 - 학생의 「예약완료」 표시용 `slotStatus` 컬렉션과 하루 2건 카운터 `studentDailyCounts` 컬렉션을 데이터 모델에 추가.
 - `feedbacks`에 `interviewDateIso`(YYYY-MM-DD)를 추가 저장하여 일지 기간 조회에 사용.

@@ -146,17 +146,19 @@ export default function StudentsPage() {
 
 function StudentFormModal({ student, onClose }) {
   const edit = !!student;
-  const [f, setF] = useState({ studentId: student?.studentId || '', name: student?.name || '', track: student?.track || '', admissionType: student?.admissionType || '' });
+  const [f, setF] = useState({ studentId: student?.studentId || '', name: student?.name || '', email: student?.email || '', track: student?.track || '', admissionType: student?.admissionType || '' });
   const [busy, setBusy] = useState(false);
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   const submit = async (e) => {
     e.preventDefault();
     setBusy(true);
     try {
-      if (edit) { await updateStudent(student.studentId, { name: f.name.trim(), track: f.track.trim(), admissionType: f.admissionType.trim() }); toast.success('수정했습니다.'); }
+      const email = f.email.trim();
+      if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('이메일 형식이 올바르지 않습니다.');
+      if (edit) { await updateStudent(student.studentId, { name: f.name.trim(), email: email || null, track: f.track.trim(), admissionType: f.admissionType.trim() }); toast.success('수정했습니다.'); }
       else {
         if (!/^[0-9A-Za-z-]+$/.test(f.studentId.trim())) throw new Error('학번은 숫자·영문으로만 입력하세요.');
-        const ok = await addStudent({ ...f, studentId: f.studentId.trim(), name: f.name.trim() });
+        const ok = await addStudent({ ...f, studentId: f.studentId.trim(), name: f.name.trim(), email: email || null });
         if (!ok) throw new Error('이미 등록된 학번입니다.');
         toast.success('등록했습니다.');
       }
@@ -168,6 +170,7 @@ function StudentFormModal({ student, onClose }) {
       <form onSubmit={submit}>
         <Field label="학번" required hint={edit ? '학번은 변경할 수 없습니다.' : '학생 로그인 ID로 사용됩니다.'}><input className="input" value={f.studentId} onChange={set('studentId')} disabled={edit} required /></Field>
         <Field label="이름" required hint="회원가입 시 입력 이름과 정확히 일치해야 합니다."><input className="input" value={f.name} onChange={set('name')} required /></Field>
+        <Field label="안내 메일 주소" hint={edit ? '학생이 가입 때 제출한 주소입니다. 잘못 적었으면 여기서 고치세요. 승인·일정·피드백 안내 메일이 이 주소로 갑니다.' : '선택. 학생이 직접 가입하면 가입 때 입력한 주소로 바뀝니다.'}><input className="input" type="email" inputMode="email" value={f.email} onChange={set('email')} placeholder="example@gmail.com" /></Field>
         <Field label="희망 계열"><input className="input" value={f.track} onChange={set('track')} placeholder="예: 인문 / 자연 / 예체능" /></Field>
         <Field label="희망 전형"><input className="input" value={f.admissionType} onChange={set('admissionType')} placeholder="예: 학생부종합전형" /></Field>
         <div className="row" style={{ justifyContent: 'flex-end' }}><button type="button" className="btn btn-outline" onClick={onClose}>취소</button><button className="btn" disabled={busy}>{busy ? '저장 중…' : '저장'}</button></div>

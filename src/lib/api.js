@@ -47,14 +47,14 @@ export async function getStudent(studentId) {
   return snap.exists() ? { id: snap.id, ...snap.data() } : null;
 }
 /** 개별 등록. 이미 있으면 false 반환(건너뜀). */
-export async function addStudent({ studentId, name, track, admissionType }) {
+export async function addStudent({ studentId, name, track, admissionType, email }) {
   const ref = doc(db, 'students', studentId);
   const snap = await getDoc(ref);
   if (snap.exists()) return false;
   await setDoc(ref, {
     studentId, name, track: track || '', admissionType: admissionType || '',
     registeredAt: serverTimestamp(), signupAt: null, consentAgreed: false, consentAt: null,
-    email: null, status: 'unregistered', authUid: null, mustChangePassword: false,
+    email: email || null, status: 'unregistered', authUid: null, mustChangePassword: false,
     approvedBy: null, approvedAt: null, rejectedBy: null, rejectedAt: null,
   });
   return true;
